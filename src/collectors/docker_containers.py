@@ -1,6 +1,7 @@
 """DockerContainerCollector - Extract logs from running Docker containers."""
 
 import logging
+import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -139,8 +140,26 @@ class DockerContainerCollector(LogCollector):
             ]
 
     @staticmethod
+    def _is_low_severity(line: str) -> bool:
+        """Check if a log line is explicitly a low-severity log level (info/debug/trace/notice)."""
+        # 1. Check for standard uppercase levels (INFO, DEBUG, TRACE, NOTICE) with boundaries
+        if re.search(r"\b(INFO|DEBUG|TRACE|NOTICE)\b", line):
+            return True
+        # 2. Check for bracketed low severity levels case-insensitively, e.g. [info], [debug]
+        if re.search(r"\[(info|debug|trace|notice)\]", line, re.IGNORECASE):
+            return True
+        # 3. Check for level=info, level: info, "level": "info" case-insensitively
+        return bool(
+            re.search(
+                r'\blevel\s*[=:]\s*["\']?(info|debug|trace|notice)\b',
+                line,
+                re.IGNORECASE,
+            )
+        )
+
+    @staticmethod
     def _filter_error_warning_lines(log_text: str) -> list[str]:
-        """Filter log lines containing error/warning keywords."""
+        """Filter log lines containing error/warning keywords while excluding low severity levels."""
         keywords = [
             "error",
             "warn",
@@ -151,11 +170,14 @@ class DockerContainerCollector(LogCollector):
             "critical",
         ]
         lines = log_text.strip().splitlines()
-        return [
-            line
-            for line in lines
-            if any(keyword in line.lower() for keyword in keywords)
-        ]
+        filtered = []
+        for line in lines:
+            # Must match a warning/error keyword and not be explicitly low severity
+            if any(
+                keyword in line.lower() for keyword in keywords
+            ) and not DockerContainerCollector._is_low_severity(line):
+                filtered.append(line)
+        return filtered
 
     @staticmethod
     def _extract_timestamp(line: str) -> str:

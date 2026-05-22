@@ -31,7 +31,11 @@ class UserSessionCollector(LogCollector):
                 j.seek_realtime(since_dt)
 
                 for entry in j:
-                    entries.append(self._format_journal_entry(entry))
+                    uid = entry.get("_UID")
+                    if (
+                        uid is not None and uid >= 1000
+                    ) or "_SYSTEMD_USER_UNIT" in entry:
+                        entries.append(self._format_journal_entry(entry))
 
         except (OSError, RuntimeError) as e:
             logger.error("Failed to read user journal: %s", e)
