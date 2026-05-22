@@ -1,0 +1,30 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "system-monitoring"
+version = "1.0.0"
+description = "Automated log extraction tool for Arch Linux system monitoring"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "systemd-python>=235",
+    "docker>=7.1.0",
+    "requests>=2.31.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-cov>=4.1.0",
+]
+
+[project.scripts]
+system-monitoring = "main:main"
+
+[tool.uv]
+dev-dependencies = [
+    "pytest>=8.0.0",
+    "pytest-cov>=4.1.0",
+]
