@@ -1,0 +1,143 @@
+#!/usr/bin/env python3
+"""Main orchestrator for system monitoring log extraction.
+
+Coordinates all collectors, builds JSON payload, and delivers to webhook.
+"""
+
+import logging
+import sys
+import os
+from datetime import datetime, timezone
+from typing import Dict, Any, List
+from pathlib import Path
+
+from src.collectors import (
+    SystemKernelCollector,
+    UserSessionCollector,
+    DockerContainerCollector,
+    PacmanLogCollector,
+)
+from src.webhook import WebhookDelivery
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+)
+logger = logging.getLogger(__name__)
+
+
+class DependencyChecker:
+    """Validate required system dependencies before execution."""
+
+    REQUIRED_COMMANDS = ["docker"]
+    
+    @staticmethod
+    def check_all() -> bool:
+        """Verify all required commands are available."""
+        import shutil
+        
+        missing = []
+        for cmd in DependencyChecker.REQUIRED_COMMANDS:
+            if not shutil.which(cmd):
+                missing.append(cmd)
+        
+        if missing:
+            logger.error("Missing required dependencies: %s", ", ".join(missing))
+            logger.error("Install with: sudo pacman -S %s", " ".join(missing))
+            return False
+        
+        return True
+
+
+class LogAggregator:
+    """Main orchestrator for log collection and webhook delivery."""
+
+    def __init__(self, webhook_url: str, lookback_minutes: int = 60):
+        self.webhook_url = webhook_url
+        self.lookback_minutes = lookback_minutes
+        self.collectors = [
+            SystemKernelCollector(lookback_minutes),
+            UserSessionCollector(lookback_minutes),
+            DockerContainerCollector(lookback_minutes),
+            PacmanLogCollector(lookback_minutes),
+        ]
+
+    def collect_all_logs(self) -> Dict[str, List[Dict[str, Any]]]:
+        """Execute all collectors and aggregate results."""
+        results = {
+            "system_kernel": [],
+            "user_session": [],
+            "docker_containers": [],
+            "pacman_updates": [],
+        }
+
+        collector_mapping = [
+            (self.collectors[0], "system_kernel"),
+            (self.collectors[1], "user_session"),
+            (self.collectors[2], "docker_containers"),
+            (self.collectors[3], "pacman_updates"),
+        ]
+
+        for collector, key in collector_mapping:
+            try:
+                logs = collector.collect()
+                results[key] = logs
+                logger.info("Collected %d entries from %s", len(logs), key)
+            except Exception as e:
+                logger.exception("Collector %s failed: %s", key, e)
+                results[key] = [{
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "message": f"Collector failed: {e}",
+                    "error": True,
+                }]
+
+        return results
+
+    def build_payload(self, logs: Dict[str, List[Dict[str, Any]]]) -> Dict[str, Any]:
+        """Construct final JSON payload matching required schema."""
+        return {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "system_environment": "Arch-CachyOS",
+            "logs": logs,
+        }
+
+    def run(self) -> int:
+        """Execute full pipeline: collect → build → deliver."""
+        logger.info("Starting log collection (lookback: %d minutes)", self.lookback_minutes)
+
+        logs = self.collect_all_logs()
+        payload = self.build_payload(logs)
+
+        total_entries = sum(len(v) for v in logs.values())
+        logger.info("Total log entries collected: %d", total_entries)
+
+        webhook = WebhookDelivery(self.webhook_url)
+        success = webhook.send(payload)
+
+        if success:
+            logger.info("Log delivery completed successfully")
+            return 0
+        else:
+            logger.error("Log delivery failed")
+            return 1
+
+
+def main():
+    """Entry point with dependency checks and environment validation."""
+    webhook_url = os.getenv("N8N_WEBHOOK_URL")
+    if not webhook_url:
+        logger.error("N8N_WEBHOOK_URL environment variable not set")
+        logger.error("Set in /etc/system-monitoring/.env or via systemd EnvironmentFile")
+        sys.exit(1)
+
+    if not DependencyChecker.check_all():
+        sys.exit(1)
+
+    lookback_minutes = int(os.getenv("LOOKBACK_MINUTES", "60"))
+    
+    aggregator = LogAggregator(webhook_url, lookback_minutes)
+    sys.exit(aggregator.run())
+
+
+if __name__ == "__main__":
+    main()
