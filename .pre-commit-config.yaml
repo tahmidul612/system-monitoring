@@ -1,0 +1,51 @@
+# Pre-commit hooks for system-monitoring
+# See https://pre-commit.com for more information
+minimum_pre_commit_version: 4.0.0
+default_stages: [pre-commit]
+fail_fast: false
+
+repos:
+  # ──────────────────────────────────────────
+  # Universal file sanity (language-agnostic)
+  # ──────────────────────────────────────────
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+        args: [--markdown-linebreak-ext=md]
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-json
+      - id: check-added-large-files
+        args: [--maxkb=500]
+      - id: check-merge-conflict
+      - id: check-case-conflict
+      - id: detect-private-key
+
+  # ──────────────────────────────────────────
+  # Python: Lint + Format
+  # Replaces: black, flake8, isort, pyupgrade, autoflake, pydocstyle
+  # ──────────────────────────────────────────
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.13
+    hooks:
+      # Linter with auto-fix (must run BEFORE formatter)
+      - id: ruff-check
+        args: [--fix, --exit-non-zero-on-fix]
+        types_or: [python, pyi]
+      # Formatter (replaces black)
+      - id: ruff-format
+        types_or: [python, pyi]
+
+  # ──────────────────────────────────────────
+  # Python: Type checking (manual stage - slow)
+  # ──────────────────────────────────────────
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v2.1.0
+    hooks:
+      - id: mypy
+        args: [--ignore-missing-imports, --warn-unused-ignores]
+        stages: [manual]
+        additional_dependencies:
+          - types-requests
