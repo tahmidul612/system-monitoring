@@ -2,6 +2,7 @@
 
 import logging
 import time
+import warnings
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -32,7 +33,9 @@ class WebhookDelivery:
             "iat": now,
             "exp": now + timedelta(minutes=5),
         }
-        return jwt.encode(payload, self.jwt_passphrase, algorithm="HS256")
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", category=jwt.InsecureKeyLengthWarning)
+            return jwt.encode(payload, self.jwt_passphrase, algorithm="HS256")
 
     def send(self, payload: dict[str, Any]) -> bool:
         """Send JSON payload to webhook with exponential backoff retry."""
@@ -59,11 +62,15 @@ class WebhookDelivery:
                 return True
 
             except requests.exceptions.RequestException as e:
+                response_text = ""
+                if hasattr(e, "response") and e.response is not None:
+                    response_text = f" | Response Body: {e.response.text[:500]}"
                 logger.warning(
-                    "Webhook delivery failed (attempt %d/%d): %s",
+                    "Webhook delivery failed (attempt %d/%d): %s%s",
                     attempt,
                     self.max_retries,
                     e,
+                    response_text,
                 )
                 if attempt < self.max_retries:
                     sleep_time = self.backoff_seconds * (2 ** (attempt - 1))
