@@ -120,6 +120,10 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now system-monitoring.timer
 ```
 
+> [!NOTE]
+> The `system-monitoring.service` automatically resolves the `uv` path dynamically by searching in the system's `PATH`, `/usr/bin/uv`, and local user directories `/home/*/.local/bin/uv` or `/root/.local/bin/uv`. This ensures the service works seamlessly whether `uv` is installed globally or locally under any user's profile.
+
+
 ---
 
 ## Quick Start

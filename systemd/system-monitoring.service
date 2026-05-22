@@ -11,7 +11,7 @@ Group=root
 
 EnvironmentFile=/etc/system-monitoring/.env
 
-ExecStart=/usr/bin/uv run --project /opt/system-monitoring python /opt/system-monitoring/main.py
+ExecStart=/bin/bash -c 'UV_PATH=$$(command -v uv || for p in /usr/bin/uv /home/*/.local/bin/uv /root/.local/bin/uv; do [ -x "$$p" ] && echo "$$p" && break; done); if [ -n "$$UV_PATH" ]; then exec "$$UV_PATH" run --project /opt/system-monitoring python /opt/system-monitoring/main.py; else echo "Error: uv executable not found" >&2; exit 1; fi'
 
 TimeoutStartSec=300
 

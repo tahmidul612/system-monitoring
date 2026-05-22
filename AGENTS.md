@@ -113,7 +113,8 @@ sleep_time = backoff_seconds * (2 ** (attempt - 1))
 
 ### 5. Systemd Integration
 
-**Service**: `Type=oneshot` - runs to completion, exits, no daemon
+**Service**: `Type=oneshot` - runs to completion, exits, no daemon.
+**Dynamic executable discovery**: Resolves the path to the `uv` executable dynamically (checking `PATH`, `/usr/bin/uv`, and `/home/*/.local/bin/uv` or `/root/.local/bin/uv`) so that it works seamlessly with both global and local user installations of `uv`.
 **Timer**: `OnCalendar=hourly` + `RandomizedDelaySec=5m` (prevent thundering herd)
 **Execution Limit**: `TimeoutStartSec=300` (5 minutes max)
 
@@ -193,7 +194,5 @@ Before committing collector changes:
 - Installation: `/opt/system-monitoring` (assumed in service ExecStart)
 
 **Change these in**:
-- `src/collectors/pacman_log.py:30` (state path)
-- `src/collectors/pacman_log.py:26` (log path)
-- `systemd/system-monitoring.service:12` (env file)
-- `systemd/system-monitoring.service:19` (install path)
+- `src/collectors/pacman_log.py` (state and log paths)
+- `systemd/system-monitoring.service` (env file, install path, ExecStart)
