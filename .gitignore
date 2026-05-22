@@ -14,7 +14,8 @@
 *.sig
 
 pkg/
-src/
+# Note: src/ commented out - we need Python src/ directory
+# src/
 
 ### Fish ###
 fishd.*
@@ -243,3 +244,9 @@ pyrightconfig.json
 .ionide
 
 # End of https://www.toptal.com/developers/gitignore/api/archlinuxpackages,linux,visualstudiocode,python,fish,git
+
+# Project-specific
+.sisyphus/
+monitoring-report.md
+/var/
+config/.env
