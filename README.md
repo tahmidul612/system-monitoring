@@ -91,12 +91,19 @@ sudo chmod 600 /etc/system-monitoring/.env
 sudo nano /etc/system-monitoring/.env
 ```
 
-Set your n8n webhook URL inside `.env`:
+Set your n8n webhook URL and JWT passphrase inside `.env`:
 
 ```ini
 N8N_WEBHOOK_URL=https://your-n8n-instance.com/webhook/system-monitoring
+JWT_PASSPHRASE=your-jwt-passphrase-here
 LOOKBACK_MINUTES=60
 ```
+
+**JWT Authentication Setup:**
+- The `JWT_PASSPHRASE` must match the secret configured in your n8n JWT Auth account
+- Uses HS256 algorithm with 5-minute token expiration
+- Tokens are automatically generated and included in the `Authorization: Bearer` header
+- If `JWT_PASSPHRASE` is not set, webhooks will be sent without authentication
 
 **3. Create state directory:**
 
@@ -122,6 +129,7 @@ After completing installation, verify everything is working:
 ```bash
 # Run a one-off collection immediately
 export N8N_WEBHOOK_URL="https://your-n8n-instance.com/webhook/system-monitoring"
+export JWT_PASSPHRASE="your-jwt-passphrase-here"
 sudo uv run python main.py
 
 # Check the timer is scheduled
@@ -149,8 +157,11 @@ A successful run produces output like:
 ### Manual Execution
 
 ```bash
-# Set webhook URL and run
+# Set webhook URL and JWT passphrase
 export N8N_WEBHOOK_URL="https://your-n8n-instance.com/webhook/system-monitoring"
+export JWT_PASSPHRASE="your-jwt-passphrase-here"
+
+# Run extraction
 sudo uv run python main.py
 ```
 
@@ -228,6 +239,7 @@ All configuration is loaded from `/etc/system-monitoring/.env` (read as a system
 | Variable | Required | Default | Description |
 |---|---|---|---|
 | `N8N_WEBHOOK_URL` | ✅ Yes | — | Full URL of the n8n webhook endpoint |
+| `JWT_PASSPHRASE` | No | — | JWT passphrase for webhook authentication (must match n8n JWT Auth secret) |
 | `LOOKBACK_MINUTES` | No | `60` | Time window (minutes) to query for each collector |
 
 The service will exit immediately with an error if `N8N_WEBHOOK_URL` is not set.
@@ -267,6 +279,7 @@ system-monitoring/
 |---|---|
 | 🔒 Read-only operations | All log queries are strictly non-destructive |
 | 🛡️ Atomic state writes | Pacman cursor uses `tempfile → fsync → os.replace` to survive crashes |
+| 🔐 JWT authentication | Optional HS256 JWT tokens (5-min expiration) for webhook delivery |
 | 🔄 Graceful degradation | Each collector runs independently; one failure doesn't stop others |
 | 🔁 Webhook retries | 3 attempts with exponential backoff: 10s → 20s → 40s |
 | ⏱️ Timeout protection | systemd enforces a 300-second execution limit |

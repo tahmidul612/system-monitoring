@@ -2,8 +2,10 @@
 
 import logging
 import time
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
+import jwt
 import requests
 
 logger = logging.getLogger(__name__)
@@ -13,21 +15,40 @@ class WebhookDelivery:
     """HTTP POST delivery with retry logic for transient failures."""
 
     def __init__(
-        self, webhook_url: str, max_retries: int = 3, backoff_seconds: int = 10
+        self,
+        webhook_url: str,
+        jwt_passphrase: str | None = None,
+        max_retries: int = 3,
+        backoff_seconds: int = 10,
     ):
         self.webhook_url = webhook_url
+        self.jwt_passphrase = jwt_passphrase
         self.max_retries = max_retries
         self.backoff_seconds = backoff_seconds
 
+    def _generate_jwt_token(self) -> str:
+        now = datetime.now(UTC)
+        payload = {
+            "iat": now,
+            "exp": now + timedelta(minutes=5),
+        }
+        return jwt.encode(payload, self.jwt_passphrase, algorithm="HS256")
+
     def send(self, payload: dict[str, Any]) -> bool:
         """Send JSON payload to webhook with exponential backoff retry."""
+        headers = {"Content-Type": "application/json"}
+
+        if self.jwt_passphrase:
+            token = self._generate_jwt_token()
+            headers["Authorization"] = f"Bearer {token}"
+
         for attempt in range(1, self.max_retries + 1):
             try:
                 response = requests.post(
                     self.webhook_url,
                     json=payload,
                     timeout=30,
-                    headers={"Content-Type": "application/json"},
+                    headers=headers,
                 )
                 response.raise_for_status()
                 logger.info(
