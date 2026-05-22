@@ -1,0 +1,11 @@
+[Unit]
+Description=Hourly System Monitoring Log Collection Timer
+Documentation=https://github.com/yourusername/system-monitoring
+
+[Timer]
+OnCalendar=hourly
+RandomizedDelaySec=5m
+Persistent=true
+
+[Install]
+WantedBy=timers.target

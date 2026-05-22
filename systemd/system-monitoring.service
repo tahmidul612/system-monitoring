@@ -1,0 +1,23 @@
+[Unit]
+Description=System Monitoring Log Extraction
+Documentation=https://github.com/yourusername/system-monitoring
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+
+EnvironmentFile=/etc/system-monitoring/.env
+
+ExecStart=/usr/bin/uv run --project /opt/system-monitoring python /opt/system-monitoring/main.py
+
+TimeoutStartSec=300
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=system-monitoring
+
+[Install]
+WantedBy=multi-user.target
