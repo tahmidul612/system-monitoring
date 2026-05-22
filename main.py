@@ -16,6 +16,7 @@ from src.collectors import (
     SystemKernelCollector,
     UserSessionCollector,
 )
+from src.utils import deduplicate_logs
 from src.webhook import WebhookDelivery
 
 logging.basicConfig(
@@ -109,16 +110,28 @@ class LogAggregator:
         }
 
     def run(self) -> int:
-        """Execute full pipeline: collect → build → deliver."""
+        """Execute full pipeline: collect → deduplicate → build → deliver."""
         logger.info(
             "Starting log collection (lookback: %d minutes)", self.lookback_minutes
         )
 
         logs = self.collect_all_logs()
-        payload = self.build_payload(logs)
 
-        total_entries = sum(len(v) for v in logs.values())
-        logger.info("Total log entries collected: %d", total_entries)
+        total_before = sum(len(v) for v in logs.values())
+        logger.info("Total log entries collected: %d", total_before)
+
+        deduplicated = deduplicate_logs(logs)
+        total_after = sum(len(v) for v in deduplicated.values())
+
+        if total_after < total_before:
+            logger.info(
+                "Deduplicated %d → %d entries (-%d duplicates)",
+                total_before,
+                total_after,
+                total_before - total_after,
+            )
+
+        payload = self.build_payload(deduplicated)
 
         webhook = WebhookDelivery(self.webhook_url, self.jwt_passphrase)
         success = webhook.send(payload)

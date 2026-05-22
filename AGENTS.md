@@ -34,6 +34,11 @@ systemctl list-timers system-monitoring.timer
 3. **Docker Containers** → `docker logs` (docker SDK, concurrent via ThreadPoolExecutor)
 4. **Pacman** → `/var/log/pacman.log` (file parsing with stateful position tracking)
 
+**Log Processing Pipeline**:
+1. Collectors run independently (graceful degradation)
+2. Deduplication groups similar logs (normalizes timestamps, PIDs, IDs, etc.)
+3. Webhook delivery with retry logic
+
 **Graceful Degradation Flow** (main.py:81-92):
 - Each collector runs independently in main orchestrator
 - Collector failure → converted to error log entry in payload
@@ -42,7 +47,28 @@ systemctl list-timers system-monitoring.timer
 
 ## Critical Patterns
 
-### 1. Atomic State Writes (StateManager)
+### 1. Log Deduplication (src/utils/deduplication.py)
+
+**WHY**: Reduces noise from repetitive logs (same error every minute = 60 entries → 1 grouped entry).
+
+**HOW**:
+- Normalizes messages: removes timestamps, PIDs, memory addresses, container IDs, UUIDs, IPs, ports
+- Groups by normalized message within each category
+- Tracks: `count`, `first_seen`, `last_seen`
+- Preserves the latest message variant
+
+**Integration** (main.py:117-132):
+```python
+logs = self.collect_all_logs()
+deduplicated = deduplicate_logs(logs)  # ← Applied before webhook
+payload = self.build_payload(deduplicated)
+```
+
+**When Extending**:
+- **DO**: Add new normalization patterns to `_normalize_message()` for new variable formats
+- **DON'T**: Change the grouping logic without considering downstream n8n parsing
+
+### 2. Atomic State Writes (StateManager)
 
 **WHY**: Pacman log position must survive crashes. Corrupted state = duplicate or missing logs.
 
@@ -61,7 +87,7 @@ systemctl list-timers system-monitoring.timer
 - **DO**: Use StateManager for any persistent state (cursor positions, timestamps)
 - **DON'T**: Write directly to state files - breaks atomicity guarantee
 
-### 2. Collector Error Handling
+### 3. Collector Error Handling
 
 **Pattern**: All collectors inherit from `LogCollector` (base.py) and follow:
 ```python
@@ -84,7 +110,7 @@ def collect(self) -> List[Dict[str, Any]]:
 2. **API errors** → return API failure entry
 3. **Per-container errors** → log warning, continue with others (ThreadPoolExecutor isolates failures)
 
-### 3. Webhook Retry Logic
+### 4. Webhook Retry Logic
 
 **Exponential Backoff** (webhook.py:41):
 ```python
@@ -99,7 +125,7 @@ sleep_time = backoff_seconds * (2 ** (attempt - 1))
 - Max retries: 3 (init default)
 - Backoff base: 10s (init default)
 
-### 4. Environment Configuration
+### 5. Environment Configuration
 
 **Load Order** (main.py:125-139):
 1. Systemd reads `/etc/system-monitoring/.env` (EnvironmentFile)
@@ -111,7 +137,7 @@ sleep_time = backoff_seconds * (2 ** (attempt - 1))
 2. Read in `main()` with `os.getenv()`
 3. Document in README.md installation section
 
-### 5. Systemd Integration
+### 6. Systemd Integration
 
 **Service**: `Type=oneshot` - runs to completion, exits, no daemon.
 **Dynamic executable discovery**: Resolves the path to the `uv` executable dynamically (checking `PATH`, `/usr/bin/uv`, and `/home/*/.local/bin/uv` or `/root/.local/bin/uv`) so that it works seamlessly with both global and local user installations of `uv`.
@@ -125,7 +151,7 @@ sleep_time = backoff_seconds * (2 ** (attempt - 1))
 
 ## JSON Payload Schema
 
-**Fixed structure** (main.py:98-113):
+**Fixed structure** (main.py:103-109, deduplicated in run()):
 ```json
 {
   "timestamp": "ISO8601 UTC",
@@ -139,6 +165,11 @@ sleep_time = backoff_seconds * (2 ** (attempt - 1))
 }
 ```
 
+**Deduplicated log entries** include additional fields when duplicates are detected:
+- `count`: Number of occurrences
+- `first_seen`: Timestamp of first occurrence
+- `last_seen`: Timestamp of latest occurrence
+
 **DO NOT change** these key names without updating downstream n8n workflow.
 
 ## Adding New Collectors
@@ -148,11 +179,12 @@ sleep_time = backoff_seconds * (2 ** (attempt - 1))
 3. Use `self.lookback_minutes` for time filtering
 4. Catch exceptions internally - return error entries, don't raise
 5. Add to `main.py`:
-   - Import in line 14-19 block
-   - Instantiate in `LogAggregator.__init__` (line 58-63)
-   - Map to payload key in `run()` (line 79-80)
-6. Update `config/.env.template` if new config needed
-7. Document in README.md architecture section
+   - Import in line 13-18 block
+   - Instantiate in `LogAggregator.__init__` (line 63-68)
+   - Map to payload key in `collect_all_logs()` (line 79-84)
+6. Deduplication is automatic - no changes needed in `src/utils/deduplication.py`
+7. Update `config/.env.template` if new config needed
+8. Document in README.md architecture section
 
 ## Testing Checklist
 

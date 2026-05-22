@@ -38,6 +38,7 @@ Automated log extraction tool that aggregates system, container, and package man
 - 👤 **User session logs** — collects Wayland compositor, PipeWire, and application crashes via `journalctl --user`
 - 🐳 **Docker container logs** — concurrent per-container log tailing, filtered for errors, VRAM limits, and crashes
 - 📦 **Pacman package manager logs** — stateful position tracking on `/var/log/pacman.log` to capture warnings, PGP issues, and ALPM script errors without duplicates
+- 🔄 **Intelligent deduplication** — groups duplicate/similar logs with occurrence count and time range tracking
 - 🔁 **Webhook delivery with retries** — exponential backoff (3 attempts, up to 70 seconds)
 - ⚡ **Graceful degradation** — a failing collector never blocks the others or the webhook
 
@@ -200,7 +201,10 @@ Every webhook POST delivers a payload with this fixed structure:
         "message": "oom-kill event ...",
         "priority": "warning",
         "unit": "tailscaled.service",
-        "pid": 1234
+        "pid": 1234,
+        "count": 3,
+        "first_seen": "2026-05-21T20:15:00Z",
+        "last_seen": "2026-05-21T20:30:15Z"
       }
     ],
     "user_session": [
@@ -232,6 +236,15 @@ Every webhook POST delivers a payload with this fixed structure:
 }
 ```
 
+**Deduplication Fields:**
+
+When duplicate or similar logs are detected, they are grouped with these additional fields:
+- `count` — number of occurrences
+- `first_seen` — timestamp of the first occurrence
+- `last_seen` — timestamp of the most recent occurrence
+
+Log entries without these fields appeared only once during the collection window.
+
 > ⚠️ **Do not rename the top-level keys** (`system_kernel`, `user_session`, `docker_containers`, `pacman_updates`) without updating your downstream n8n workflow.
 
 ---
@@ -261,9 +274,11 @@ system-monitoring/
 │   │   ├── user_session.py         # journalctl --user collector
 │   │   ├── docker_containers.py    # docker logs (concurrent, keyword-filtered)
 │   │   └── pacman_log.py           # /var/log/pacman.log (stateful cursor)
+│   ├── utils/
+│   │   └── deduplication.py        # Log deduplication and grouping
 │   ├── state_manager.py            # Atomic JSON state persistence
 │   └── webhook.py                  # HTTP delivery with exponential backoff
-├── main.py                         # Orchestrator: collect → build → deliver
+├── main.py                         # Orchestrator: collect → deduplicate → build → deliver
 ├── systemd/
 │   ├── system-monitoring.service   # oneshot service unit
 │   └── system-monitoring.timer     # hourly execution timer
