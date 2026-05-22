@@ -43,11 +43,18 @@ sudo chmod 600 /etc/system-monitoring/.env
 sudo nano /etc/system-monitoring/.env
 ```
 
-Edit `.env` and set your n8n webhook URL:
+Edit `.env` and set your n8n webhook URL and JWT passphrase:
 ```
 N8N_WEBHOOK_URL=https://your-n8n-instance.com/webhook/system-monitoring
+JWT_PASSPHRASE=your-jwt-passphrase-here
 LOOKBACK_MINUTES=60
 ```
+
+**JWT Authentication Setup:**
+- The JWT_PASSPHRASE must match the secret configured in your n8n JWT Auth account
+- Uses HS256 algorithm with 5-minute token expiration
+- Tokens are automatically generated and included in the `Authorization: Bearer` header
+- If JWT_PASSPHRASE is not set, webhooks will be sent without authentication
 
 3. **Create state directory:**
 
@@ -69,8 +76,9 @@ sudo systemctl enable --now system-monitoring.timer
 ### Manual Execution
 
 ```bash
-# Set webhook URL
+# Set webhook URL and JWT passphrase
 export N8N_WEBHOOK_URL="https://your-n8n-instance.com/webhook/system-monitoring"
+export JWT_PASSPHRASE="your-jwt-passphrase-here"
 
 # Run extraction
 sudo uv run python main.py

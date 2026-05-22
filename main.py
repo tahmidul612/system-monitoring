@@ -51,8 +51,14 @@ class DependencyChecker:
 class LogAggregator:
     """Main orchestrator for log collection and webhook delivery."""
 
-    def __init__(self, webhook_url: str, lookback_minutes: int = 60):
+    def __init__(
+        self,
+        webhook_url: str,
+        jwt_passphrase: str | None = None,
+        lookback_minutes: int = 60,
+    ):
         self.webhook_url = webhook_url
+        self.jwt_passphrase = jwt_passphrase
         self.lookback_minutes = lookback_minutes
         self.collectors = [
             SystemKernelCollector(lookback_minutes),
@@ -114,7 +120,7 @@ class LogAggregator:
         total_entries = sum(len(v) for v in logs.values())
         logger.info("Total log entries collected: %d", total_entries)
 
-        webhook = WebhookDelivery(self.webhook_url)
+        webhook = WebhookDelivery(self.webhook_url, self.jwt_passphrase)
         success = webhook.send(payload)
 
         if success:
@@ -138,9 +144,10 @@ def main():
     if not DependencyChecker.check_all():
         sys.exit(1)
 
+    jwt_passphrase = os.getenv("JWT_PASSPHRASE")
     lookback_minutes = int(os.getenv("LOOKBACK_MINUTES", "60"))
 
-    aggregator = LogAggregator(webhook_url, lookback_minutes)
+    aggregator = LogAggregator(webhook_url, jwt_passphrase, lookback_minutes)
     sys.exit(aggregator.run())
 
 
