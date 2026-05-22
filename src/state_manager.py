@@ -4,12 +4,11 @@ import json
 import os
 import tempfile
 from pathlib import Path
-from typing import Optional
 
 
 class StateManager:
     """Atomic state persistence for pacman.log position tracking.
-    
+
     Uses JSON with atomic writes (tempfile + fsync + os.replace) and
     rolling .bak recovery for crash safety.
     """
@@ -53,6 +52,7 @@ class StateManager:
 
         if backup and path.exists():
             import shutil
+
             shutil.copy2(path, bak)
 
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -74,11 +74,12 @@ class StateManager:
     def get_last_line(self) -> int:
         return self._data.get("last_line", 0)
 
-    def set_last_line(self, line: int, file_size: Optional[int] = None) -> None:
+    def set_last_line(self, line: int, file_size: int | None = None) -> None:
         self._data["last_line"] = line
         if file_size is not None:
             self._data["last_file_size"] = file_size
         from datetime import datetime
+
         self._data["updated_at"] = datetime.now().isoformat()
 
     def get_last_file_size(self) -> int:

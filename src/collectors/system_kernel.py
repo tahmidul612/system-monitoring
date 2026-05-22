@@ -1,10 +1,10 @@
 """SystemKernelCollector - Extract system-level logs via journalctl --system."""
 
 import logging
-from datetime import datetime, timedelta, timezone
-from typing import List, Dict, Any
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
-from systemd import journal
+from systemd import journal  # type: ignore[attr-defined]
 
 from .base import LogCollector
 
@@ -13,15 +13,15 @@ logger = logging.getLogger(__name__)
 
 class SystemKernelCollector(LogCollector):
     """Collect system and kernel logs from systemd journal.
-    
+
     Queries journalctl --system for priority warning..emerg entries.
     Target events: OOM kills, GPU/VRAM faults, storage I/O errors,
     Tailscale drops, Docker daemon errors.
     """
 
-    def collect(self) -> List[Dict[str, Any]]:
+    def collect(self) -> list[dict[str, Any]]:
         """Query systemd journal for system-level warnings and errors."""
-        since_dt = datetime.now(timezone.utc) - timedelta(minutes=self.lookback_minutes)
+        since_dt = datetime.now(UTC) - timedelta(minutes=self.lookback_minutes)
         entries = []
 
         try:
@@ -35,16 +35,18 @@ class SystemKernelCollector(LogCollector):
 
         except (OSError, RuntimeError) as e:
             logger.error("Failed to read system journal: %s", e)
-            return [self._format_entry(
-                timestamp=datetime.now(timezone.utc).isoformat(),
-                message=f"System journal unavailable: {e}",
-                priority="error",
-                error=True,
-            )]
+            return [
+                self._format_entry(
+                    timestamp=datetime.now(UTC).isoformat(),
+                    message=f"System journal unavailable: {e}",
+                    priority="error",
+                    error=True,
+                )
+            ]
 
         return entries
 
-    def _format_journal_entry(self, entry: Dict[str, Any]) -> Dict[str, Any]:
+    def _format_journal_entry(self, entry: dict[str, Any]) -> dict[str, Any]:
         """Convert systemd journal entry to standardized format."""
         timestamp = entry.get("__REALTIME_TIMESTAMP")
         if isinstance(timestamp, datetime):

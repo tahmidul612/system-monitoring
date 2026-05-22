@@ -188,4 +188,3 @@ Run linters and tests:
 ```bash
 uv run pytest
 ```
-

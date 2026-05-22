@@ -1,20 +1,20 @@
 """PacmanLogCollector - Extract package manager warnings from /var/log/pacman.log."""
 
 import logging
-from datetime import datetime, timezone, timedelta
-from pathlib import Path
-from typing import List, Dict, Any, Optional
 import re
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+from typing import Any, ClassVar
 
-from .base import LogCollector
 from ..state_manager import StateManager
+from .base import LogCollector
 
 logger = logging.getLogger(__name__)
 
 
 class PacmanLogCollector(LogCollector):
     """Collect warnings and errors from pacman.log.
-    
+
     Uses state tracking to avoid re-processing previously read lines.
     Target events: [ALPM-SCRIPTLET] errors, [WARNING] tags, missing PGP keys.
     """
@@ -22,7 +22,7 @@ class PacmanLogCollector(LogCollector):
     PACMAN_LOG_PATH = Path("/var/log/pacman.log")
     STATE_PATH = Path("/var/lib/system-monitoring/pacman_state.json")
 
-    WARNING_PATTERNS = [
+    WARNING_PATTERNS: ClassVar[list[str]] = [
         r"\[WARNING\]",
         r"\[ALPM-SCRIPTLET\]",
         r"error:",
@@ -35,7 +35,7 @@ class PacmanLogCollector(LogCollector):
         self.state = StateManager(self.STATE_PATH)
         self.warning_regex = re.compile("|".join(self.WARNING_PATTERNS), re.IGNORECASE)
 
-    def collect(self) -> List[Dict[str, Any]]:
+    def collect(self) -> list[dict[str, Any]]:
         """Extract warnings/errors from pacman.log since last read position."""
         if not self.PACMAN_LOG_PATH.exists():
             logger.warning("Pacman log not found: %s", self.PACMAN_LOG_PATH)
@@ -45,7 +45,7 @@ class PacmanLogCollector(LogCollector):
         entries = []
 
         try:
-            with open(self.PACMAN_LOG_PATH, "r", encoding="utf-8", errors="replace") as f:
+            with open(self.PACMAN_LOG_PATH, encoding="utf-8", errors="replace") as f:
                 last_line_num = self.state.get_last_line()
                 current_line_num = 0
 
@@ -63,33 +63,38 @@ class PacmanLogCollector(LogCollector):
                 self.state.set_last_line(current_line_num, f.tell())
                 self.state.save()
 
-        except (OSError, IOError) as e:
+        except OSError as e:
             logger.error("Failed to read pacman.log: %s", e)
-            return [self._format_entry(
-                timestamp=datetime.now(timezone.utc).isoformat(),
-                message=f"Failed to read pacman.log: {e}",
-                error=True,
-            )]
+            return [
+                self._format_entry(
+                    timestamp=datetime.now(UTC).isoformat(),
+                    message=f"Failed to read pacman.log: {e}",
+                    error=True,
+                )
+            ]
 
         return entries
 
-    def _parse_pacman_line(self, line: str) -> Optional[Dict[str, Any]]:
+    def _parse_pacman_line(self, line: str) -> dict[str, Any] | None:
         """Parse pacman.log line format: [YYYY-MM-DD HH:MM] [LEVEL] message."""
-        match = re.match(r"\[(\d{4}-\d{2}-\d{2}[T\s]\d{2}:\d{2}(?::\d{2})?)\]\s+\[?(\w+)\]?\s*(.*)", line)
+        match = re.match(
+            r"\[(\d{4}-\d{2}-\d{2}[T\s]\d{2}:\d{2}(?::\d{2})?)\]\s+\[?(\w+)\]?\s*(.*)",
+            line,
+        )
         if not match:
             return None
 
         timestamp_str, level, message = match.groups()
-        
+
         try:
             timestamp_str = timestamp_str.replace(" ", "T")
             if len(timestamp_str) == 16:
                 timestamp_str += ":00"
             dt = datetime.fromisoformat(timestamp_str)
             if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=timezone.utc)
+                dt = dt.replace(tzinfo=UTC)
         except ValueError:
-            dt = datetime.now(timezone.utc)
+            dt = datetime.now(UTC)
 
         return self._format_entry(
             timestamp=dt.isoformat(),
@@ -98,14 +103,14 @@ class PacmanLogCollector(LogCollector):
             source="pacman",
         )
 
-    def _is_within_lookback(self, timestamp_str: Optional[str]) -> bool:
+    def _is_within_lookback(self, timestamp_str: str | None) -> bool:
         """Check if timestamp is within the lookback window."""
         if not timestamp_str:
             return True
 
         try:
             dt = datetime.fromisoformat(timestamp_str)
-            cutoff = datetime.now(timezone.utc) - timedelta(minutes=self.lookback_minutes)
+            cutoff = datetime.now(UTC) - timedelta(minutes=self.lookback_minutes)
             return dt >= cutoff
         except (ValueError, TypeError):
             return True

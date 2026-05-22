@@ -23,8 +23,11 @@ dev = [
 [project.scripts]
 system-monitoring = "main:main"
 
-[tool.uv]
-dev-dependencies = [
+[tool.hatch.build.targets.wheel]
+packages = ["src"]
+
+[dependency-groups]
+dev = [
     "pytest>=8.0.0",
     "pytest-cov>=4.1.0",
     "pre-commit>=4.6.0",

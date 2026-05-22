@@ -5,17 +5,16 @@ Coordinates all collectors, builds JSON payload, and delivers to webhook.
 """
 
 import logging
-import sys
 import os
-from datetime import datetime, timezone
-from typing import Dict, Any, List
-from pathlib import Path
+import sys
+from datetime import UTC, datetime
+from typing import Any, ClassVar
 
 from src.collectors import (
-    SystemKernelCollector,
-    UserSessionCollector,
     DockerContainerCollector,
     PacmanLogCollector,
+    SystemKernelCollector,
+    UserSessionCollector,
 )
 from src.webhook import WebhookDelivery
 
@@ -29,23 +28,23 @@ logger = logging.getLogger(__name__)
 class DependencyChecker:
     """Validate required system dependencies before execution."""
 
-    REQUIRED_COMMANDS = ["docker"]
-    
+    REQUIRED_COMMANDS: ClassVar[list[str]] = ["docker"]
+
     @staticmethod
     def check_all() -> bool:
         """Verify all required commands are available."""
         import shutil
-        
+
         missing = []
         for cmd in DependencyChecker.REQUIRED_COMMANDS:
             if not shutil.which(cmd):
                 missing.append(cmd)
-        
+
         if missing:
             logger.error("Missing required dependencies: %s", ", ".join(missing))
             logger.error("Install with: sudo pacman -S %s", " ".join(missing))
             return False
-        
+
         return True
 
 
@@ -62,9 +61,9 @@ class LogAggregator:
             PacmanLogCollector(lookback_minutes),
         ]
 
-    def collect_all_logs(self) -> Dict[str, List[Dict[str, Any]]]:
+    def collect_all_logs(self) -> dict[str, list[dict[str, Any]]]:
         """Execute all collectors and aggregate results."""
-        results = {
+        results: dict[str, list[dict[str, Any]]] = {
             "system_kernel": [],
             "user_session": [],
             "docker_containers": [],
@@ -85,25 +84,29 @@ class LogAggregator:
                 logger.info("Collected %d entries from %s", len(logs), key)
             except Exception as e:
                 logger.exception("Collector %s failed: %s", key, e)
-                results[key] = [{
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
-                    "message": f"Collector failed: {e}",
-                    "error": True,
-                }]
+                results[key] = [
+                    {
+                        "timestamp": datetime.now(UTC).isoformat(),
+                        "message": f"Collector failed: {e}",
+                        "error": True,
+                    }
+                ]
 
         return results
 
-    def build_payload(self, logs: Dict[str, List[Dict[str, Any]]]) -> Dict[str, Any]:
+    def build_payload(self, logs: dict[str, list[dict[str, Any]]]) -> dict[str, Any]:
         """Construct final JSON payload matching required schema."""
         return {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "system_environment": "Arch-CachyOS",
             "logs": logs,
         }
 
     def run(self) -> int:
         """Execute full pipeline: collect → build → deliver."""
-        logger.info("Starting log collection (lookback: %d minutes)", self.lookback_minutes)
+        logger.info(
+            "Starting log collection (lookback: %d minutes)", self.lookback_minutes
+        )
 
         logs = self.collect_all_logs()
         payload = self.build_payload(logs)
@@ -127,14 +130,16 @@ def main():
     webhook_url = os.getenv("N8N_WEBHOOK_URL")
     if not webhook_url:
         logger.error("N8N_WEBHOOK_URL environment variable not set")
-        logger.error("Set in /etc/system-monitoring/.env or via systemd EnvironmentFile")
+        logger.error(
+            "Set in /etc/system-monitoring/.env or via systemd EnvironmentFile"
+        )
         sys.exit(1)
 
     if not DependencyChecker.check_all():
         sys.exit(1)
 
     lookback_minutes = int(os.getenv("LOOKBACK_MINUTES", "60"))
-    
+
     aggregator = LogAggregator(webhook_url, lookback_minutes)
     sys.exit(aggregator.run())
 
